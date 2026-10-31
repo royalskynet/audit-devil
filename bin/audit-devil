@@ -201,6 +201,16 @@ def load(bundle):
     return b, json.loads(mf.read_text())
 
 
+def inline(task, mat):
+    """task.md plus every material file, line-numbered so citations can be exact."""
+    out = [task, "", "## Material contents (inlined — do not try to open these paths)", ""]
+    for f in sorted(x for x in mat.rglob("*") if x.is_file()):
+        rel = f.relative_to(mat)
+        lines = f.read_text(errors="replace").splitlines()
+        out += [f"### {rel}", "```"] + [f"{i}\t{s}" for i, s in enumerate(lines, 1)] + ["```", ""]
+    return "\n".join(out)
+
+
 def cmd_send(a):
     b, meta = load(a.bundle)
     task = (b / "task.md").read_text()
@@ -223,7 +233,10 @@ def cmd_send(a):
         print(f"task_id={meta['task_id']} rc={r.returncode} (collect with: audit-devil collect {b})",
               file=sys.stderr)
         sys.exit(r.returncode)
-    r = subprocess.run(p["cmd"], shell=True, input=task, text=True, capture_output=True)
+    # A plain stdin model has no file tools, and agentic CLIs sandbox paths outside their
+    # cwd (opencode auto-rejects them) — either way a path list makes it guess. Inline it.
+    r = subprocess.run(p["cmd"], shell=True, input=inline(task, Path(meta["material"])),
+                       text=True, capture_output=True)
     (b / "send.stderr.log").write_text(r.stderr or "")
     if r.returncode != 0:
         die(f"second model exited {r.returncode}; stderr in {b}/send.stderr.log", 1)

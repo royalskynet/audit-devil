@@ -141,6 +141,8 @@ intent; when in doubt, ask-user. no-op = informational.
 
 ## 限制
 
+- `cmd` preset 會把材料全文加行號內嵌進 stdin，沒有讀檔工具的純模型也能引用精確行號。會自己跑工具的 agent 型 CLI（例如 build 模式的 `opencode run`）可能去執行程式後沒給最終答案就結束；優先用純模型呼叫。
+
 `check` 只查核位置，從不查核主張的真偽。使用 `--diff` 時，變更後的完整檔案會自動納入；超過 512 KB 的檔案與已刪除的檔案會被略過。不會自動修正任何東西。也不做任何機密處理：bundle 的內容會被送到第二個模型，因此在對敏感 repo 執行前請自行判斷。
 
 ## 前例／致謝

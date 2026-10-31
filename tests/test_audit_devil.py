@@ -146,6 +146,23 @@ with tempfile.TemporaryDirectory() as td:
         else:
             ok(r.returncode == 4 and tid == "ad-t4", "send.sh still running (4) -> task_id kept")
 
+# --- cmd preset inlines the material (stdin models cannot open files) ------
+with tempfile.TemporaryDirectory() as td:
+    import os
+    src = Path(td) / "repo"
+    src.mkdir()
+    (src / "app.py").write_text("alpha\nneedle-line\n")
+    probe = Path(td) / "probe.sh"
+    probe.write_text("#!/bin/sh\nif grep -q '2\tneedle-line' && true; then echo '## Verdict'; echo ok; else exit 9; fi\n")
+    probe.chmod(0o755)
+    env = dict(os.environ, AUDIT_DEVIL_PRESET="cmd", AUDIT_DEVIL_CMD=str(probe),
+               AUDIT_DEVIL_OUT=str(Path(td) / "out"))
+    r = subprocess.run([sys.executable, "-I", str(CLI), "bundle", "--root", str(src), "--file", "app.py",
+                        "--id", "inl"], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-I", str(CLI), "send", r.stdout.strip()],
+                       capture_output=True, text=True, env=env)
+    ok(r.returncode == 0, "cmd send inlines material with line numbers")
+
 # --- bundle refuses to guess ---------------------------------------------
 r = subprocess.run([sys.executable, "-I", str(CLI), "bundle", "--preset", "cmd"],
                    capture_output=True, text=True, cwd=ROOT)

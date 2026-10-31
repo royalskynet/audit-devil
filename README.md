@@ -141,6 +141,8 @@ Fill `verdict.md`. Each `decision:` is one of:
 
 ## Limits
 
+- With the `cmd` preset the material is inlined into stdin with line numbers, so plain models without file tools can cite exact lines. Agentic CLIs that run their own tools (e.g. `opencode run` in build mode) may try to execute code and stop without a final answer; prefer a plain model call.
+
 `check` verifies locations only, never the truth of a claim. With `--diff`, the full post-change files are included automatically; files over 512 KB and deleted files are skipped. Nothing is fixed automatically. No secret handling is done: the bundle contents are sent to the second model, so decide for yourself before running it on a sensitive repo.
 
 ## Prior art / Credits
