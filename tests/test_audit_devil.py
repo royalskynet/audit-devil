@@ -102,6 +102,12 @@ with tempfile.TemporaryDirectory() as td:
                        capture_output=True, text=True)
     ok(r.returncode == 0, "check exits 0 on a clean verdict with no findings")
 
+    # a bare heading with nothing under it is not a verdict
+    (b / "report.md").write_text("## Verdict\n\n")
+    r = subprocess.run([sys.executable, "-I", str(CLI), "check", str(b)],
+                       capture_output=True, text=True)
+    ok(r.returncode == 1, "check exits 1 on an empty Verdict heading")
+
     # no Verdict and no findings = the model ignored the format: fail loud
     (b / "report.md").write_text("Looks good to me!\n")
     r = subprocess.run([sys.executable, "-I", str(CLI), "check", str(b)],
@@ -126,6 +132,31 @@ with tempfile.TemporaryDirectory() as td:
                         "--out", str(Path(td) / "out"), "--file", str(Path(td) / "a/config.py"),
                         "--file", str(Path(td) / "b/config.py")], capture_output=True, text=True)
     ok(r.returncode == 2 and "already taken" in r.stderr, "same-named --file -> usage error")
+
+# --- --file naming a file --diff already brought in is not a collision ------
+with tempfile.TemporaryDirectory() as td:
+    repo = Path(td) / "r"
+    repo.mkdir()
+    g = lambda *c: subprocess.run(["git", "-C", str(repo), *c], capture_output=True, check=True)
+    g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+    (repo / "a.py").write_text("1\n"); g("add", "."); g("commit", "-qm", "1")
+    (repo / "a.py").write_text("2\n"); g("commit", "-qam", "2")
+    r = subprocess.run([sys.executable, "-I", str(CLI), "bundle", "--preset", "cmd", "--root", str(repo),
+                        "--out", str(Path(td) / "out"), "--diff", "HEAD~1..HEAD", "--file", "a.py"],
+                       capture_output=True, text=True)
+    ok(r.returncode == 0, "--diff + --file of the same file -> no collision")
+
+# --- cmd send refuses an empty material set --------------------------------
+with tempfile.TemporaryDirectory() as td:
+    import os
+    b = Path(td) / "b"
+    b.mkdir()
+    (b / "task.md").write_text("t")
+    (b / "meta.json").write_text(json.dumps({"id": "e", "preset": "cmd", "kind": "cmd",
+                                             "material": str(Path(td) / "gone")}))
+    r = subprocess.run([sys.executable, "-I", str(CLI), "send", str(b)], capture_output=True, text=True,
+                       env=dict(os.environ, AUDIT_DEVIL_CMD="cat"))
+    ok(r.returncode == 1 and "missing or empty" in r.stderr, "cmd send with missing material -> fail loud")
 
 # --- send records task_id only when delivered ------------------------------
 with tempfile.TemporaryDirectory() as td:

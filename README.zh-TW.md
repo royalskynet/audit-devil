@@ -26,11 +26,14 @@ ln -s "$PWD/commands/audit.en.md" ~/.claude/commands/audit.md
 
 ## 選擇你的第二個模型
 
-設定 `AUDIT_DEVIL_PRESET=cmd` 與 `AUDIT_DEVIL_CMD`。該指令會從 stdin 讀取提示詞，並把報告寫到 stdout。請依你安裝的 CLI 版本調整；作者只測過 OpenBot 與 `cmd` 管線本身。
+設定 `AUDIT_DEVIL_PRESET=cmd` 與 `AUDIT_DEVIL_CMD`。該指令會從 stdin 讀取提示詞，並把報告寫到 stdout。請依你安裝的 CLI 版本調整；作者實測過 OpenBot 與下方 opencode＋DeepSeek 那一行，其餘是未實測的範例。
 
 ```bash
 # 建議：simonw/llm（Apache-2.0；外掛涵蓋 OpenRouter/Ollama/Gemini/Anthropic）
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m gpt-4o-mini'
+
+# 2026-10-31 實測：opencode 跑 DeepSeek，唯讀 agent，在材料目錄內執行
+AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir <bundle>/material'
 
 # 透過 llm 外掛使用任何 OpenRouter 模型
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m openrouter/<model>'

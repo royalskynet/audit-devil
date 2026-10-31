@@ -26,11 +26,14 @@ Requirements: Python 3.9+ and git. Nothing else.
 
 ## Pick your second model
 
-Set `AUDIT_DEVIL_PRESET=cmd` and `AUDIT_DEVIL_CMD`. The command reads the prompt from stdin and writes the report to stdout. Adjust these to your installed CLI version; the author has only tested OpenBot and the `cmd` pipeline itself.
+Set `AUDIT_DEVIL_PRESET=cmd` and `AUDIT_DEVIL_CMD`. The command reads the prompt from stdin and writes the report to stdout. Adjust these to your installed CLI version; the author has tested OpenBot and the opencode + DeepSeek line below; the others are untested examples.
 
 ```bash
 # Recommended: simonw/llm (Apache-2.0; plugins cover OpenRouter/Ollama/Gemini/Anthropic)
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m gpt-4o-mini'
+
+# Tested 2026-10-31: DeepSeek via opencode, read-only agent, run inside the material dir
+AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir <bundle>/material'
 
 # Any OpenRouter model through the llm plugin
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m openrouter/<model>'

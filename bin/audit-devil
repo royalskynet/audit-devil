@@ -127,6 +127,7 @@ def cmd_bundle(a):
     mat.mkdir(parents=True, exist_ok=True)
 
     parts = []
+    copied = {}  # material rel path -> resolved source, so a repeat of the same file is not a collision
     if a.diff:
         r = run(["git", "-C", str(root), "diff", "--unified=8", a.diff])
         if r.returncode:
@@ -145,6 +146,7 @@ def cmd_bundle(a):
             dst = mat / "files" / n
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
+            copied[Path(n)] = src.resolve()
             parts.append(f"material/files/{n} — full file after the change")
     for f in a.file or []:
         src = (root / f).resolve() if not Path(f).is_absolute() else Path(f)
@@ -155,10 +157,13 @@ def cmd_bundle(a):
         except ValueError:
             rel = Path(src.name)
         dst = mat / "files" / rel
+        if copied.get(rel) == src.resolve():
+            continue
         if dst.exists():
             die(f"--file {f}: material/files/{rel} already taken by another file; copy it under --root")
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+        copied[rel] = src.resolve()
         parts.append(f"material/files/{rel} — full current file")
     if a.incident:
         src = Path(a.incident)
@@ -203,8 +208,11 @@ def load(bundle):
 
 def inline(task, mat):
     """task.md plus every material file, line-numbered so citations can be exact."""
+    files = sorted(x for x in mat.rglob("*") if x.is_file()) if mat.is_dir() else []
+    if not files:
+        die(f"material {mat} is missing or empty; rebuild the bundle", 1)
     out = [task, "", "## Material contents (inlined — do not try to open these paths)", ""]
-    for f in sorted(x for x in mat.rglob("*") if x.is_file()):
+    for f in files:
         rel = f.relative_to(mat)
         lines = f.read_text(errors="replace").splitlines()
         out += [f"### {rel}", "```"] + [f"{i}\t{s}" for i, s in enumerate(lines, 1)] + ["```", ""]
@@ -325,7 +333,7 @@ def cmd_check(a):
     out = [f"# Checked findings — {meta['id']}", "",
            f"report: {rep}", f"material root: {root}", ""]
     text = rep.read_text()
-    clean = not findings and re.search(r"^##\s+Verdict\s*$", text, re.M) is not None
+    clean = not findings and re.search(r"^##\s+Verdict[ \t]*\n\s*[^\s#]", text, re.M) is not None
     if clean:
         out += ["Clean verdict: the report has `## Verdict` and no findings. That is a valid",
                 "answer, not proof of absence — read the verdict line before trusting it.", ""]
