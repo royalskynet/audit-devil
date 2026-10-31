@@ -26,14 +26,31 @@ ln -s "$PWD/commands/audit.en.md" ~/.claude/commands/audit.md
 
 ## 選擇你的第二個模型
 
-設定 `AUDIT_DEVIL_PRESET=cmd` 與 `AUDIT_DEVIL_CMD`。該指令會從 stdin 讀取提示詞，並把報告寫到 stdout。請依你安裝的 CLI 版本調整；作者實測過 OpenBot 與下方 opencode＋DeepSeek 那一行，其餘是未實測的範例。
+沒有內建的預設模型。audit-devil 依下列順序決定第二模型：
+
+1. 命令列的 `--preset <名稱>`
+2. 環境變數 `AUDIT_DEVIL_PRESET`／`AUDIT_DEVIL_CMD`
+3. 設定檔 `~/.config/audit-devil/config`（會遵守 `$XDG_CONFIG_HOME`；`AUDIT_DEVIL_CONFIG` 可改路徑）
+4. 都沒設、且你在終端機前，它會詢問你，並問要不要存成預設
+5. 其他情況（CI、代理程式、管線）以 exit 2 停下，並告訴你怎麼設定
+
+內建 preset：`deepseek`（opencode＋DeepSeek V4 Pro）、`builder`（OpenBot Builder）、`cmd`（任何你指定的 CLI）。
+
+```bash
+audit-devil config                        # 顯示目前設定與每項的來源
+audit-devil config --ask                  # 互動選擇
+audit-devil config --preset deepseek      # 存成預設
+audit-devil config --preset cmd --cmd 'llm -m gpt-4o-mini'
+```
+
+`cmd` 的指令從 stdin 讀取提示詞，並把報告寫到 stdout。指令裡的 `{material}` 會換成 bundle 的材料目錄。請依你安裝的 CLI 版本調整；作者實測過 OpenBot 與下方 opencode＋DeepSeek 那一行，其餘是未實測的範例。
 
 ```bash
 # 建議：simonw/llm（Apache-2.0；外掛涵蓋 OpenRouter/Ollama/Gemini/Anthropic）
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m gpt-4o-mini'
 
 # 2026-10-31 實測：opencode 跑 DeepSeek，唯讀 agent，在材料目錄內執行
-AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir <bundle>/material'
+AUDIT_DEVIL_PRESET=deepseek   # = opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir {material}
 
 # 透過 llm 外掛使用任何 OpenRouter 模型
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m openrouter/<model>'
@@ -45,7 +62,7 @@ AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='ollama run qwen2.5-coder'
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='claude -p --model claude-sonnet-5-5'
 ```
 
-`builder` preset（預設）會與 OpenBot（本機代理程式）的 Builder agent 對話。它需要 send-to-openbot 技能（`OPENBOT_SKILL_DIR`）；設定 `OPENBOT_AGENT=<id>` 可改用其他 agent。它的回覆會在之後的回合才送達，因此你必須執行 `collect`。
+`builder` preset 會與 OpenBot（本機代理程式）的 Builder agent 對話。它需要 send-to-openbot 技能（`OPENBOT_SKILL_DIR`）；設定 `OPENBOT_AGENT=<id>` 可改用其他 agent。它的回覆會在之後的回合才送達，因此你必須執行 `collect`。
 
 ## 快速開始
 
@@ -134,10 +151,13 @@ intent; when in doubt, ask-user. no-op = informational.
 
 | 變數 | 意義 | 預設值 |
 | --- | --- | --- |
-| `AUDIT_DEVIL_PRESET` | 第二模型 preset：`builder` 或 `cmd` | `builder` |
-| `AUDIT_DEVIL_CMD` | `cmd` preset 使用的 CLI（stdin 到 stdout） | 未設定 |
-| `AUDIT_DEVIL_OUT` | bundle 的上層目錄 | `cmd` 為 `./.audit-devil` |
+| `AUDIT_DEVIL_PRESET` | 第二模型 preset：`deepseek`、`builder` 或 `cmd` | 設定檔，否則詢問 |
+| `AUDIT_DEVIL_CMD` | `cmd` preset 使用的 CLI（stdin 到 stdout，`{material}`＝材料目錄） | 設定檔 |
+| `AUDIT_DEVIL_OUT` | bundle 的上層目錄 | `./.audit-devil`；`builder` 為 `~/OpenBot/Shared/audit-devil` |
 | `AUDIT_DEVIL_LANG` | 報告敘述使用的語言 | `zh-TW`（設為 `en` 則用英文） |
+| `AUDIT_DEVIL_CONFIG` | 設定檔路徑 | `~/.config/audit-devil/config` |
+
+設定檔用 `key=value` 逐行存 `preset`、`cmd`、`out`、`lang`。同一項有環境變數時，環境變數優先。
 | `OPENBOT_SKILL_DIR` | send-to-openbot 技能所在目錄 | `~/.claude/skills/send-to-openbot` |
 | `OPENBOT_AGENT` | OpenBot agent id，會覆寫 builder agent | Builder agent |
 | `OPENBOT_TIMEOUT` | OpenBot 可花費的時間上限 | `45m` |

@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -30,13 +31,22 @@ BUILDER = "agent-fc4b4efb-184a-4a25-b0e6-24b2d934f670"  # OpenBot Builder (ID st
 # A preset is just "how to reach the second model".
 #   kind=openbot -> OpenBot agent, answers arrive in a later turn (needs `collect`)
 #   kind=cmd     -> any CLI: prompt on stdin, report on stdout (synchronous), e.g.
-#                   simonw/llm (`llm -m <model>`), `codex exec -`, `gemini -p ""`
+#                   simonw/llm (`llm -m <model>`), `codex exec -`, `gemini -p ""`.
+#                   `{material}` in the command is replaced by the bundle's material dir.
 #   OpenBot users with another agent: OPENBOT_AGENT=<id> overrides the builder preset.
 PRESETS = {
-    "builder": {"kind": "openbot", "agent": BUILDER, "out": HOME / "OpenBot/Shared/audit-devil"},
-    "cmd": {"kind": "cmd", "cmd": None, "out": None},
+    # read-only `plan` agent run inside the material dir: build mode tries to execute code and
+    # gets sandbox-rejected outside its cwd, then ends with no answer (tested 2026-10-31)
+    "deepseek": {"kind": "cmd", "out": None, "about": "opencode + DeepSeek V4 Pro (opencode-go)",
+                 "cmd": "opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir {material}"},
+    "builder": {"kind": "openbot", "agent": BUILDER, "out": HOME / "OpenBot/Shared/audit-devil",
+                "about": "OpenBot Builder agent (needs the send-to-openbot skill)"},
+    "cmd": {"kind": "cmd", "cmd": None, "out": None,
+            "about": "any CLI that reads the prompt on stdin and prints the report"},
 }
-DEFAULT_PRESET = os.environ.get("AUDIT_DEVIL_PRESET", "builder")
+CONFIG = Path(os.environ.get("AUDIT_DEVIL_CONFIG") or
+              Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "audit-devil/config")
+CONFIG_KEYS = ("preset", "cmd", "out", "lang")
 
 SPEC = """\
 You are the devil's advocate on this change. Your job is to find what is wrong
@@ -97,23 +107,91 @@ def run(cmd, **kw):
     return subprocess.run(cmd, text=True, capture_output=True, **kw)
 
 
+# ---------------------------------------------------------------- settings
+# Precedence: command-line flag > AUDIT_DEVIL_* env > config file > ask (terminal only) > fail.
+
+def read_config():
+    if not CONFIG.is_file():
+        return {}
+    conf = {}
+    for line in CONFIG.read_text().splitlines():
+        k, sep, v = line.partition("=")
+        if sep and k.strip() in CONFIG_KEYS and not line.lstrip().startswith("#"):
+            conf[k.strip()] = v.strip()
+    return conf
+
+
+def write_config(updates):
+    """Replace only the keys being set; comments and other lines a person wrote stay."""
+    new = {k: v for k, v in updates.items() if v is not None}
+    lines = CONFIG.read_text().splitlines() if CONFIG.is_file() else []
+    out = [ln for ln in lines if ln.lstrip().startswith("#") or ln.partition("=")[0].strip() not in new]
+    out += [f"{k}={new[k]}" for k in CONFIG_KEYS if k in new]
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text("\n".join(out) + "\n")
+    return read_config()
+
+
+def setting(key, default=None):
+    return os.environ.get(f"AUDIT_DEVIL_{key.upper()}") or read_config().get(key) or default
+
+
+def ask_preset():
+    """Interactive pick of the second model; only ever runs on a terminal."""
+    names = list(PRESETS)
+    print("audit-devil: which model should play devil's advocate?", file=sys.stderr)
+    for i, n in enumerate(names, 1):
+        print(f"  {i}) {n:<9} {PRESETS[n]['about']}", file=sys.stderr)
+    raw = input(f"choose 1-{len(names)}: ").strip()
+    name = names[int(raw) - 1] if raw.isdigit() and 1 <= int(raw) <= len(names) else raw
+    if name not in PRESETS:
+        die(f"unknown choice {raw!r}")
+    cmd = None
+    if name == "cmd":
+        cmd = input("command (stdin = prompt, stdout = report; {material} = material dir): ").strip()
+        if not cmd:
+            die("no command given")
+        os.environ["AUDIT_DEVIL_CMD"] = cmd
+    if input(f"save as default in {CONFIG}? [y/N] ").strip().lower() in ("y", "yes"):
+        write_config({"preset": name, "cmd": cmd})
+    return name
+
+
+def resolve_preset(flag):
+    name = flag or setting("preset")
+    if not name and setting("cmd"):
+        name = "cmd"
+    if not name:
+        if sys.stdin.isatty():
+            return ask_preset()
+        die("no second model configured. Pick one:\n"
+            f"  audit-devil config --preset <{'|'.join(PRESETS)}>   (saved in {CONFIG})\n"
+            "  or AUDIT_DEVIL_PRESET=... / AUDIT_DEVIL_CMD='<cli reading stdin>'")
+    return name
+
+
 def preset(name, need_cmd=False):
     """need_cmd: only `send` actually has to reach the model, so only `send` requires the command."""
     if name not in PRESETS:
         die(f"unknown preset {name!r}; have: {', '.join(PRESETS)}")
     p = dict(PRESETS[name])
-    if p["kind"] == "cmd":
-        p["cmd"] = os.environ.get("AUDIT_DEVIL_CMD")
+    if name == "cmd":
+        p["cmd"] = setting("cmd")
         if need_cmd and not p["cmd"]:
-            die("preset 'cmd' needs AUDIT_DEVIL_CMD, e.g."
-                " AUDIT_DEVIL_CMD='claude -p --model claude-sonnet-5-5'")
-        p["out"] = Path(os.environ.get("AUDIT_DEVIL_OUT", ".audit-devil"))
+            die("preset 'cmd' needs a command: AUDIT_DEVIL_CMD='llm -m <model>'"
+                " or audit-devil config --preset cmd --cmd '<cli>'")
+    p["out"] = Path(setting("out", p["out"] or ".audit-devil")).expanduser()
     return p
+
+
+def fill(cmd, mat):
+    return cmd.replace("{material}", shlex.quote(str(Path(mat).resolve())))  # send may run elsewhere
 
 
 # ---------------------------------------------------------------- bundle
 
 def cmd_bundle(a):
+    a.preset = resolve_preset(a.preset)
     p = preset(a.preset)
     root = Path(a.root).resolve()
     if not root.is_dir():
@@ -121,7 +199,7 @@ def cmd_bundle(a):
     if not (a.diff or a.file or a.incident):
         die("nothing to audit: give --diff, --file and/or --incident")
 
-    base = Path(a.out) if a.out else Path(os.environ.get("AUDIT_DEVIL_OUT", p["out"]))
+    base = Path(a.out) if a.out else p["out"]
     bundle = base / (a.id or time.strftime("%Y%m%d-%H%M%S"))
     mat = bundle / "material"
     mat.mkdir(parents=True, exist_ok=True)
@@ -172,7 +250,7 @@ def cmd_bundle(a):
         shutil.copy2(src, mat / "incident.txt")
         parts.append("material/incident.txt — verbatim failure output / incident record")
 
-    lang = a.lang or os.environ.get("AUDIT_DEVIL_LANG", "zh-TW")
+    lang = a.lang or setting("lang", "zh-TW")
     task = [f"# Audit + post-mortem request ({bundle.name})", "",
             "## Material", f"Material root: {mat}", ""]
     task += [f"- {x}" for x in parts]
@@ -192,6 +270,7 @@ def cmd_bundle(a):
         "id": bundle.name, "preset": a.preset, "kind": p["kind"], "root": str(root),
         "material": str(mat), "diff": a.diff, "files": a.file or [],
         "incident": a.incident, "lang": lang, "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "cmd": fill(p["cmd"], mat) if p.get("cmd") else None,  # what `send` will run, fixed at bundle time
     }, indent=2, ensure_ascii=False))
     print(bundle)
 
@@ -222,7 +301,7 @@ def inline(task, mat):
 def cmd_send(a):
     b, meta = load(a.bundle)
     task = (b / "task.md").read_text()
-    p = preset(meta["preset"], need_cmd=True)
+    p = preset(meta["preset"], need_cmd=not meta.get("cmd"))
     if p["kind"] == "openbot":
         env = dict(os.environ, OPENBOT_TASK_ID=f"ad-{meta['id']}")
         env.setdefault("OPENBOT_AGENT", p["agent"])
@@ -243,7 +322,8 @@ def cmd_send(a):
         sys.exit(r.returncode)
     # A plain stdin model has no file tools, and agentic CLIs sandbox paths outside their
     # cwd (opencode auto-rejects them) — either way a path list makes it guess. Inline it.
-    r = subprocess.run(p["cmd"], shell=True, input=inline(task, Path(meta["material"])),
+    cmd = meta.get("cmd") or fill(p["cmd"], Path(meta["material"]))
+    r = subprocess.run(cmd, shell=True, input=inline(task, Path(meta["material"])),
                        text=True, capture_output=True)
     (b / "send.stderr.log").write_text(r.stderr or "")
     if r.returncode != 0:
@@ -375,6 +455,24 @@ def cmd_check(a):
         sys.exit(1)
 
 
+def cmd_config(a):
+    updates = {"preset": a.preset, "cmd": a.cmd, "out": a.out, "lang": a.lang}
+    if a.preset and a.preset not in PRESETS:
+        die(f"unknown preset {a.preset!r}; have: {', '.join(PRESETS)}")
+    if a.ask:
+        if not sys.stdin.isatty():
+            die("--ask needs a terminal")
+        ask_preset()
+    elif any(v is not None for v in updates.values()):
+        write_config(updates)
+    conf = read_config()
+    print(f"config: {CONFIG}{'' if CONFIG.is_file() else ' (not created)'}")
+    for k in CONFIG_KEYS:
+        env = os.environ.get(f"AUDIT_DEVIL_{k.upper()}")
+        src = "env" if env else ("config" if k in conf else "-")
+        print(f"  {k:<6} = {env or conf.get(k, '')}  [{src}]")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="audit-devil", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -386,7 +484,7 @@ def main():
     pb.add_argument("--file", action="append", help="whole file to include (repeatable)")
     pb.add_argument("--incident", help="file holding verbatim failure output")
     pb.add_argument("--note", help="context the second model cannot infer")
-    pb.add_argument("--preset", default=DEFAULT_PRESET, help=f"second model (default: {DEFAULT_PRESET})")
+    pb.add_argument("--preset", help=f"second model: {', '.join(PRESETS)} (default: env, config, else ask)")
     pb.add_argument("--lang", help="language for the report prose (default zh-TW)")
     pb.add_argument("--out", help="bundle parent directory")
     pb.add_argument("--id", help="bundle name (default: timestamp)")
@@ -406,6 +504,14 @@ def main():
     pk.add_argument("bundle")
     pk.add_argument("--material", help="override the material root")
     pk.set_defaults(fn=cmd_check)
+
+    pf = sub.add_parser("config", help="show or set defaults (no flags = show)")
+    pf.add_argument("--preset", help=f"default second model: {', '.join(PRESETS)}")
+    pf.add_argument("--cmd", help="command for the cmd preset ({material} = material dir)")
+    pf.add_argument("--out", help="bundle parent directory for cmd presets")
+    pf.add_argument("--lang", help="language for report prose")
+    pf.add_argument("--ask", action="store_true", help="pick the second model interactively")
+    pf.set_defaults(fn=cmd_config)
 
     a = ap.parse_args()
     a.fn(a)

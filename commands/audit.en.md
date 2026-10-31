@@ -17,8 +17,9 @@ audit-devil bundle --root <repo 絕對路徑> \
 ```
 
 `--note` is the only lever in this step: the second model cannot see this session's conversation. Put the goal, the known trade-offs, and your own suspicions into it.
-The output is the absolute path of the bundle directory — remember it. The default second model = OpenBot Builder; to use another OpenBot agent, set `OPENBOT_AGENT=<id>`,
-or use `--preset cmd` together with `AUDIT_DEVIL_CMD='<CLI that reads stdin and writes stdout>'`.
+The output is the absolute path of the bundle directory — remember it. The second model comes from `--preset` → `AUDIT_DEVIL_PRESET`/`AUDIT_DEVIL_CMD` → the config file
+(`audit-devil config` shows the current values). If none is set it exits 2: set one with `audit-devil config --preset <name>` as the error says and rerun; do not guess a model.
+One-off switch: `--preset builder` (OpenBot; another agent via `OPENBOT_AGENT=<id>`) or `--preset cmd` with `AUDIT_DEVIL_CMD='<CLI that reads stdin and writes stdout>'`.
 
 ## 2. Send
 
@@ -26,6 +27,7 @@ or use `--preset cmd` together with `AUDIT_DEVIL_CMD='<CLI that reads stdin and 
 audit-devil send <bundle>
 ```
 
+`cmd`-type presets (including `deepseek`) are synchronous: when `send` returns the report is there, go straight to step 3.
 The OpenBot teammate's reply lands in a **later turn**; this turn only reports "dispatched" — no polling, no waiting.
 `collect` retrieves the report (if it hasn't answered yet it exits 1, so do something else and collect later):
 

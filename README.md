@@ -26,14 +26,31 @@ Requirements: Python 3.9+ and git. Nothing else.
 
 ## Pick your second model
 
-Set `AUDIT_DEVIL_PRESET=cmd` and `AUDIT_DEVIL_CMD`. The command reads the prompt from stdin and writes the report to stdout. Adjust these to your installed CLI version; the author has tested OpenBot and the opencode + DeepSeek line below; the others are untested examples.
+There is no built-in default model. audit-devil picks the second model in this order:
+
+1. `--preset <name>` on the command line
+2. `AUDIT_DEVIL_PRESET` / `AUDIT_DEVIL_CMD` environment variables
+3. the config file `~/.config/audit-devil/config` (`$XDG_CONFIG_HOME` is honored; `AUDIT_DEVIL_CONFIG` overrides the path)
+4. if none is set and you are at a terminal, it asks you and offers to save the answer
+5. otherwise (CI, an agent, a pipe) it stops with exit 2 and tells you how to configure one
+
+Built-in presets: `deepseek` (opencode + DeepSeek V4 Pro), `builder` (OpenBot Builder), `cmd` (any CLI you give it).
+
+```bash
+audit-devil config                        # show current settings and where each came from
+audit-devil config --ask                  # pick interactively
+audit-devil config --preset deepseek      # save a default
+audit-devil config --preset cmd --cmd 'llm -m gpt-4o-mini'
+```
+
+For `cmd`, the command reads the prompt from stdin and writes the report to stdout. `{material}` in the command is replaced by the bundle's material directory. Adjust these to your installed CLI version; the author has tested OpenBot and the opencode + DeepSeek line below; the others are untested examples.
 
 ```bash
 # Recommended: simonw/llm (Apache-2.0; plugins cover OpenRouter/Ollama/Gemini/Anthropic)
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m gpt-4o-mini'
 
 # Tested 2026-10-31: DeepSeek via opencode, read-only agent, run inside the material dir
-AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir <bundle>/material'
+AUDIT_DEVIL_PRESET=deepseek   # = opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir {material}
 
 # Any OpenRouter model through the llm plugin
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='llm -m openrouter/<model>'
@@ -45,7 +62,7 @@ AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='ollama run qwen2.5-coder'
 AUDIT_DEVIL_PRESET=cmd AUDIT_DEVIL_CMD='claude -p --model claude-sonnet-5-5'
 ```
 
-The `builder` preset (the default) talks to the Builder agent of OpenBot, a local agent app. It needs the send-to-openbot skill (`OPENBOT_SKILL_DIR`); set `OPENBOT_AGENT=<id>` to use a different agent. Its reply arrives in a later turn, so you must `collect`.
+The `builder` preset talks to the Builder agent of OpenBot, a local agent app. It needs the send-to-openbot skill (`OPENBOT_SKILL_DIR`); set `OPENBOT_AGENT=<id>` to use a different agent. Its reply arrives in a later turn, so you must `collect`.
 
 ## Quick start
 
@@ -134,10 +151,13 @@ Fill `verdict.md`. Each `decision:` is one of:
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `AUDIT_DEVIL_PRESET` | Second-model preset: `builder` or `cmd` | `builder` |
-| `AUDIT_DEVIL_CMD` | CLI for the `cmd` preset (stdin to stdout) | unset |
-| `AUDIT_DEVIL_OUT` | Bundle parent directory | `./.audit-devil` for `cmd` |
+| `AUDIT_DEVIL_PRESET` | Second-model preset: `deepseek`, `builder` or `cmd` | config file, else ask |
+| `AUDIT_DEVIL_CMD` | CLI for the `cmd` preset (stdin to stdout, `{material}` = material dir) | config file |
+| `AUDIT_DEVIL_OUT` | Bundle parent directory | `./.audit-devil`; `builder`: `~/OpenBot/Shared/audit-devil` |
 | `AUDIT_DEVIL_LANG` | Language for the report prose | `zh-TW` (set `en` for English) |
+| `AUDIT_DEVIL_CONFIG` | Config file path | `~/.config/audit-devil/config` |
+
+The config file holds `preset`, `cmd`, `out` and `lang` as `key=value` lines. An environment variable beats the same key in the file.
 | `OPENBOT_SKILL_DIR` | Directory of the send-to-openbot skill | `~/.claude/skills/send-to-openbot` |
 | `OPENBOT_AGENT` | OpenBot agent id, overrides the builder agent | Builder agent |
 | `OPENBOT_TIMEOUT` | How long OpenBot may take | `45m` |

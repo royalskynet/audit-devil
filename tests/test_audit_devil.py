@@ -7,6 +7,7 @@ finding and a believed finding. If it stops catching bad citations, this fails.
 """
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "bin/audit-devil"
+
+# Never read the operator's real defaults: every run below starts unconfigured.
+for k in [k for k in os.environ if k.startswith("AUDIT_DEVIL_")]:
+    del os.environ[k]
+_CONF_DIR = tempfile.mkdtemp()
+os.environ["AUDIT_DEVIL_CONFIG"] = str(Path(_CONF_DIR) / "config")
 
 spec = importlib.util.spec_from_loader("ad", importlib.machinery.SourceFileLoader("ad", str(CLI)))
 ad = importlib.util.module_from_spec(spec)
@@ -198,6 +205,51 @@ with tempfile.TemporaryDirectory() as td:
 r = subprocess.run([sys.executable, "-I", str(CLI), "bundle", "--preset", "cmd"],
                    capture_output=True, text=True, cwd=ROOT)
 ok(r.returncode == 2 and "nothing to audit" in r.stderr, "bundle with no material -> usage error")
+
+# --- choosing the second model: flag > env > config > ask (tty) > fail ----
+with tempfile.TemporaryDirectory() as td:
+    src = Path(td) / "repo"
+    src.mkdir()
+    (src / "a.py").write_text("x\n")
+    conf = Path(td) / "conf"
+
+    def bundle(*extra, **env):
+        e = dict(os.environ, AUDIT_DEVIL_CONFIG=str(conf), AUDIT_DEVIL_OUT=str(Path(td) / "out"), **env)
+        r = subprocess.run([sys.executable, "-I", str(CLI), "bundle", "--root", str(src), "--file", "a.py",
+                            *extra], capture_output=True, text=True, env=e, stdin=subprocess.DEVNULL)
+        meta = json.loads((Path(r.stdout.strip()) / "meta.json").read_text()) if r.returncode == 0 else None
+        return r, meta
+
+    r, _ = bundle("--id", "none")
+    ok(r.returncode != 0 and "no second model configured" in r.stderr,
+       "unconfigured + no terminal -> fails loud instead of guessing a model")
+
+    r = subprocess.run([sys.executable, "-I", str(CLI), "config", "--preset", "nope"], capture_output=True,
+                       text=True, env=dict(os.environ, AUDIT_DEVIL_CONFIG=str(conf)))
+    ok(r.returncode != 0 and not conf.exists(), "config rejects an unknown preset and writes nothing")
+
+    subprocess.run([sys.executable, "-I", str(CLI), "config", "--preset", "deepseek"], check=True,
+                   capture_output=True, env=dict(os.environ, AUDIT_DEVIL_CONFIG=str(conf)))
+    r, m = bundle("--id", "fromconf")
+    ok(m and m["preset"] == "deepseek" and "--dir " + str(Path(m["material"]).resolve()) in (m["cmd"] or ""),
+       "config default is used and {material} is filled in as an absolute path")
+
+    r, m = bundle("--id", "fromenv", AUDIT_DEVIL_PRESET="cmd", AUDIT_DEVIL_CMD="cat")
+    ok(m and m["preset"] == "cmd" and m["cmd"] == "cat", "env beats config")
+
+    r, m = bundle("--id", "fromflag", "--preset", "builder", AUDIT_DEVIL_PRESET="cmd")
+    ok(m and m["preset"] == "builder" and str(Path(td) / "out") in m["material"],
+       "flag beats env, and AUDIT_DEVIL_OUT applies to every preset")
+
+    conf.write_text("# my note\npreset=builder\nlang=en\n")
+    subprocess.run([sys.executable, "-I", str(CLI), "config", "--preset", "deepseek"], check=True,
+                   capture_output=True, env=dict(os.environ, AUDIT_DEVIL_CONFIG=str(conf)))
+    ok(conf.read_text() == "# my note\nlang=en\npreset=deepseek\n",
+       "config save keeps a person's comments and other keys, replaces only the set key")
+
+    conf.write_text("cmd=cat\n")
+    r, m = bundle("--id", "cmdonly")
+    ok(m and m["preset"] == "cmd" and m["cmd"] == "cat", "a configured cmd alone implies the cmd preset")
 
 print()
 if fails:

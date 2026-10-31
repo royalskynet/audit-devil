@@ -17,8 +17,9 @@ audit-devil bundle --root <repo 絕對路徑> \
 ```
 
 `--note` 是這一步唯一的槓桿：第二模型看不到本 session 的對話。把目標、已知取捨、你自己的懷疑寫進去。
-輸出是 bundle 目錄絕對路徑，記住它。預設第二模型＝OpenBot Builder；換別的 OpenBot agent 用 `OPENBOT_AGENT=<id>`，
-或 `--preset cmd` 搭 `AUDIT_DEVIL_CMD='<吃 stdin 吐 stdout 的 CLI>'`。
+輸出是 bundle 目錄絕對路徑，記住它。第二模型依序取 `--preset` → `AUDIT_DEVIL_PRESET`／`AUDIT_DEVIL_CMD` → 設定檔
+（`audit-devil config` 看目前值）。都沒設會 exit 2：照錯誤訊息用 `audit-devil config --preset <名稱>` 設好再重跑，不要自己猜模型。
+臨時換：`--preset builder`（OpenBot，換 agent 用 `OPENBOT_AGENT=<id>`）或 `--preset cmd` 搭 `AUDIT_DEVIL_CMD='<吃 stdin 吐 stdout 的 CLI>'`。
 
 ## 2. 送出
 
@@ -26,6 +27,7 @@ audit-devil bundle --root <repo 絕對路徑> \
 audit-devil send <bundle>
 ```
 
+`cmd` 類 preset（含 `deepseek`）是同步的：`send` 結束報告就到，直接進第 3 步。
 OpenBot 的隊員回覆落在**之後的輪次**，這一輪只回「已派出」，不輪詢、不等。
 `collect` 取回報告（還沒答會 exit 1，就先做別的事，稍後再取）：
 
