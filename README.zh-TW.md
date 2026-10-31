@@ -110,12 +110,12 @@ intent; when in doubt, ask-user. no-op = informational.
 對每一個 `evidence:` 項目，`check` 會以 material 根目錄為基準解析引用，並回報下列其中一種狀態：
 
 - `OK` — 檔案與行號都存在；實際的原始碼行會被引用出來。
-- `MISSING` — 該路徑不存在於 material 中。
+- `MISSING` — 該路徑不存在於 material 中，或無法解析（例如 symlink 迴圈）。
 - `OUTOFRANGE` — 路徑存在，但引用的行號落在檔案範圍之外。
 - `OUTSIDE` — 該路徑逃出了 material 根目錄。
 - `BADFORM` — 引用不是 `path:line` 或 `path:line-line` 的形式。
 
-路徑可以是 material 相對路徑（`files/x`）或 repo 相對路徑（`x`），兩者都會解析。結束碼 0 表示每個引用都查核通過。結束碼 1 表示至少有一個引用是 `UNVERIFIED`，或報告中完全解析不出任何發現區塊。結束碼 2 表示用法錯誤。
+路徑可以是 material 相對路徑（`files/x`）或 repo 相對路徑（`x`），兩者都會解析。結束碼 0 表示每個引用都查核通過。結束碼 1 表示至少有一個引用是 `UNVERIFIED`，或報告既沒有 `## Verdict` 也沒有任何發現區塊（模型無視格式）。有 `## Verdict` 但零發現是合法的乾淨答案，結束碼 0。結束碼 2 表示用法錯誤。
 
 `OK` 只證明那些行存在，並不證明該主張為真。裁決仍須由你閱讀程式碼後自行做出。
 

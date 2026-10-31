@@ -39,7 +39,7 @@ audit-devil collect <bundle>
 audit-devil check <bundle>
 ```
 
-exit 1 ＝有發現的 `evidence:` 指不到真實位置，或整份報告解析不出任何發現。
+exit 1 ＝有發現的 `evidence:` 指不到真實位置，或報告沒有 `## Verdict` 也沒有發現（無視格式）。有 Verdict 零發現＝乾淨答案，exit 0，仍要讀 Verdict 那行。
 `checked.md` 每條附實際程式碼行。核實分兩層，不要混：
 
 - **位置**：`check` 已機械判定。`UNVERIFIED` 的一律駁回並在回報裡點名「第二模型捏造了 N 條」，不替它找補。

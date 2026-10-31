@@ -110,12 +110,12 @@ intent; when in doubt, ask-user. no-op = informational.
 For each `evidence:` entry, `check` resolves the citation against the material root and reports one of:
 
 - `OK` — the file and lines exist; the actual source lines are quoted.
-- `MISSING` — the path does not exist in the material.
+- `MISSING` — the path does not exist in the material, or cannot be resolved (e.g. a symlink loop).
 - `OUTOFRANGE` — the path exists but the cited lines fall outside the file.
 - `OUTSIDE` — the path escapes the material root.
 - `BADFORM` — the citation is not `path:line` or `path:line-line`.
 
-A path may be material-relative (`files/x`) or repo-relative (`x`); both resolve. Exit 0 means every citation was verified. Exit 1 means at least one citation is `UNVERIFIED`, or no finding blocks could be parsed from the report at all. Exit 2 means the usage is wrong.
+A path may be material-relative (`files/x`) or repo-relative (`x`); both resolve. Exit 0 means every citation was verified. Exit 1 means at least one citation is `UNVERIFIED`, or the report has neither a `## Verdict` nor any finding block (the model ignored the format). A `## Verdict` with zero findings is a valid clean answer and exits 0. Exit 2 means the usage is wrong.
 
 `OK` only proves those lines exist. It does not prove the claim is true. The verdict is still yours to make by reading the code.
 

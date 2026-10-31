@@ -39,7 +39,7 @@ audit-devil collect <bundle>
 audit-devil check <bundle>
 ```
 
-exit 1 = a finding's `evidence:` does not point to a real location, or the report parses to zero findings.
+exit 1 = a finding's `evidence:` does not point to a real location, or the report has no `## Verdict` and no findings (format ignored). A Verdict with zero findings is a clean answer, exit 0 — still read the Verdict line.
 `checked.md` attaches the actual code lines to each entry. Verification has two layers; do not conflate them:
 
 - **Location**: `check` has already decided this mechanically. Reject every `UNVERIFIED` entry and name it explicitly in the report: "the second model fabricated N entries" — do not cover for it.

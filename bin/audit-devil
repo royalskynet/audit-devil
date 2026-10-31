@@ -155,6 +155,8 @@ def cmd_bundle(a):
         except ValueError:
             rel = Path(src.name)
         dst = mat / "files" / rel
+        if dst.exists():
+            die(f"--file {f}: material/files/{rel} already taken by another file; copy it under --root")
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         parts.append(f"material/files/{rel} — full current file")
@@ -207,10 +209,19 @@ def cmd_send(a):
         env = dict(os.environ, OPENBOT_TASK_ID=f"ad-{meta['id']}")
         env.setdefault("OPENBOT_AGENT", p["agent"])
         env.setdefault("OPENBOT_TIMEOUT", "45m")
-        r = subprocess.run(["bash", str(SKILL / "send.sh"), "-"], input=task, text=True, env=env)
-        meta["task_id"] = f"ad-{meta['id']}"
+        r = subprocess.run(["bash", str(SKILL / "send.sh"), "-"], input=task, text=True, env=env,
+                           capture_output=True)
+        (b / "send.log").write_text(f"rc={r.returncode}\n--- stdout\n{r.stdout}\n--- stderr\n{r.stderr}")
+        # send.sh: 0 done, 3 already done <30m, 4 timed out but running, 6 waiting for approval —
+        # only these mean the task exists on the other side, so only these get a task_id to collect.
+        if r.returncode not in (0, 3, 4, 6):
+            die(f"send.sh exited {r.returncode}, nothing delivered; see {b}/send.log", 1)
+        meta["task_id"] = env["OPENBOT_TASK_ID"]
         (b / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
-        print(f"task_id={meta['task_id']} (collect with: audit-devil collect {b})", file=sys.stderr)
+        if r.returncode == 0 and r.stdout.strip() and not (b / "report.md").is_file():
+            (b / "report.md").write_text(r.stdout)
+        print(f"task_id={meta['task_id']} rc={r.returncode} (collect with: audit-devil collect {b})",
+              file=sys.stderr)
         sys.exit(r.returncode)
     r = subprocess.run(p["cmd"], shell=True, input=task, text=True, capture_output=True)
     (b / "send.stderr.log").write_text(r.stderr or "")
@@ -272,11 +283,14 @@ def locate(root, spec):
     rel = m.group("path").lstrip("/")
     for cand in (root / rel, root / "files" / rel):
         try:
-            cand.resolve().relative_to(root)
+            real = cand.resolve()
+            real.relative_to(root)
         except ValueError:
             return "OUTSIDE", f"{rel} is outside the material root", []
-        if cand.is_file():
-            path = cand
+        except (OSError, RuntimeError) as e:  # symlink loop and friends
+            return "MISSING", f"{rel} cannot be resolved: {e}", []
+        if real.is_file():
+            path = real
             break
     else:
         return "MISSING", f"{rel} does not exist in the material", []
@@ -297,9 +311,13 @@ def cmd_check(a):
     findings = parse_report(rep.read_text())
     out = [f"# Checked findings — {meta['id']}", "",
            f"report: {rep}", f"material root: {root}", ""]
-    if not findings:
-        out += ["No finding blocks parsed from the report. Either the second model ignored the",
-                "format, or it found nothing. Read report.md before concluding anything.", ""]
+    text = rep.read_text()
+    clean = not findings and re.search(r"^##\s+Verdict\s*$", text, re.M) is not None
+    if clean:
+        out += ["Clean verdict: the report has `## Verdict` and no findings. That is a valid",
+                "answer, not proof of absence — read the verdict line before trusting it.", ""]
+    elif not findings:
+        out += ["No `## Verdict` and no finding blocks: the second model ignored the format.", ""]
     bad = 0
     verdict = [f"# Verdict — {meta['id']}", "",
                "Rule on every finding. accept = you confirmed it and will fix it;",
@@ -332,7 +350,7 @@ def cmd_check(a):
         vf.write_text("\n".join(verdict))
     print(checked)
     print(f"findings={len(findings)} unverified={bad}", file=sys.stderr)
-    if bad or not findings:
+    if bad or not (findings or clean):
         sys.exit(1)
 
 
