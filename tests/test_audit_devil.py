@@ -305,6 +305,9 @@ with tempfile.TemporaryDirectory() as td:
 # --- codex preset asks for a read-only sandbox -----------------------------
 ok("codex" in ad.PRESETS and "-s read-only" in ad.PRESETS["codex"]["cmd"]
    and "{material}" in ad.PRESETS["codex"]["cmd"], "codex preset: read-only sandbox inside material")
+ok("model_reasoning_effort=high" in ad.PRESETS["codex"]["cmd"], "codex preset pins reasoning effort")
+ok("features.hooks=false" in ad.PRESETS["codex"]["cmd"], "codex preset turns user hooks off")
+ok("Do not ask" in ad.SPEC, "spec forbids asking for confirmation (one-shot run)")
 
 print()
 if fails:

@@ -41,8 +41,13 @@ PRESETS = {
     # gets sandbox-rejected outside its cwd, then ends with no answer (tested 2026-10-31)
     "deepseek": {"kind": "cmd", "out": None, "about": "opencode + DeepSeek V4 Pro (opencode-go)",
                  "cmd": "opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir {material}"},
-    "codex": {"kind": "cmd", "out": None, "about": "OpenAI Codex CLI, read-only sandbox",
-              "cmd": "codex exec --skip-git-repo-check -s read-only -C {material} -"},
+    # effort pinned: at the CLI's default `low` codex asked "start?" instead of writing the report
+    # (tested 2026-11-04); the spec's first line also forbids asking.
+    # hooks off: a user's UserPromptSubmit hook can inject "confirm first" and the one-shot run
+    # ends waiting for a reply (tested 2026-11-04); the read-only sandbox still applies
+    "codex": {"kind": "cmd", "out": None, "about": "OpenAI Codex CLI, read-only sandbox, user hooks off",
+              "cmd": "codex exec --skip-git-repo-check -s read-only -c features.hooks=false"
+                     " -c model_reasoning_effort=high -C {material} -"},
     "builder": {"kind": "openbot", "agent": BUILDER, "out": HOME / "OpenBot/Shared/audit-devil",
                 "about": "OpenBot Builder agent (needs the send-to-openbot skill)"},
     "cmd": {"kind": "cmd", "cmd": None, "out": None,
@@ -53,6 +58,9 @@ CONFIG = Path(os.environ.get("AUDIT_DEVIL_CONFIG") or
 CONFIG_KEYS = ("preset", "cmd", "out", "lang")
 
 SPEC = """\
+This is a one-shot, non-interactive run: nobody will answer questions. Do not ask
+for confirmation; read the material and write the report now.
+
 You are the devil's advocate on this change. Your job is to find what is wrong
 with it and to explain why nobody caught it. You are not here to approve it.
 
