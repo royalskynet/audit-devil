@@ -16,6 +16,13 @@ argument-hint: "<計畫或目標檔> [--repo <路徑>] [--max-rounds N]"
 
 1. 寫工單 `.audit-devil/<輪次>.md`（四段：任務／驗收〔每行一條指令、exit 0 才算過〕／不動／禁令）。
 2. `deep-lint <工單>`；不通過就改工單，不派。
+   - **先裁決才派**：工單碰到鎖、去重、狀態機、故障注入或對外發送，先送規格審查（不計輪次）：
+     ```bash
+     audit-devil bundle --root <repo> --file <工單> --file <相關現役碼…> --preset codex \
+       --note "<只審規格：重複執行、漏寫前提、測試打不打得到分支>" --id spec-<輪次>
+     audit-devil send <bundle> && audit-devil check <bundle>
+     ```
+     逐條填 `verdict.md` 後跑 `audit-devil gate <bundle>`（不帶 `--ledger`，不進收斂統計）。exit 3＝還沒裁決完，**不准進第 3 步**；accept 條目由主 session 改寫進工單，重跑 `deep-lint` 才派。
 3. 從 main 開 worktree：`git worktree add <worktree> -b loop/<n> main`。
 4. `deep-run <工單.md> <worktree>`，背景跑，結束再收件。
 5. 收件後主 session 到 worktree 自己重跑 `wo-verify <工單>`；不過就寫下一張修補工單回第 2 步。
