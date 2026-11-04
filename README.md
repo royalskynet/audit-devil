@@ -34,7 +34,7 @@ There is no built-in default model. audit-devil picks the second model in this o
 4. if none is set and you are at a terminal, it asks you and offers to save the answer
 5. otherwise (CI, an agent, a pipe) it stops with exit 2 and tells you how to configure one
 
-Built-in presets: `deepseek` (opencode + DeepSeek V4 Pro), `builder` (OpenBot Builder), `cmd` (any CLI you give it).
+Built-in presets: `deepseek` (opencode + DeepSeek V4 Pro), `codex` (OpenAI Codex CLI, read-only sandbox), `builder` (OpenBot Builder), `cmd` (any CLI you give it).
 
 ```bash
 audit-devil config                        # show current settings and where each came from
@@ -146,6 +146,21 @@ Fill `verdict.md`. Each `decision:` is one of:
 - `accept` — you verified it is true and will fix it this round.
 - `reject` — you verified it is false or the location does not exist; say why in one sentence.
 - `defer` — real but out of scope; record where it is being kept (issue / fixindex / state).
+
+## Loop (/codex-loop)
+
+`/codex-loop <plan or goal file>` turns the pipeline into a bounded loop: the main session plans and rules, `deep-run` executes in a worktree, and audit-devil with `--preset codex` audits and post-mortems. After ruling on every finding in `verdict.md`, `audit-devil gate <bundle> --ledger <repo>/.audit-devil/loop.tsv` decides whether the loop continues.
+
+```bash
+ln -s "$PWD/commands/codex-loop.en.md" ~/.claude/commands/codex-loop.md
+```
+
+| gate exit | meaning |
+| --- | --- |
+| 0 | converged — no accepted findings, wrap up |
+| 3 | undecided items or a reject/defer without a reason — rule first |
+| 4 | accept count flat or rising for 3 rounds — not converging, change method |
+| 10 | accepted findings remain — fix and run another round |
 
 ## Environment variables
 

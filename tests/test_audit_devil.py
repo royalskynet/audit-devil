@@ -251,6 +251,61 @@ with tempfile.TemporaryDirectory() as td:
     r, m = bundle("--id", "cmdonly")
     ok(m and m["preset"] == "cmd" and m["cmd"] == "cat", "a configured cmd alone implies the cmd preset")
 
+# --- gate: no ruling, no progress ------------------------------------------
+with tempfile.TemporaryDirectory() as td:
+    def gate(decisions, ledger=None, checked="severity: high\nseverity: low\n"):
+        b = Path(tempfile.mkdtemp(dir=td))
+        (b / "meta.json").write_text(json.dumps({"id": "g", "preset": "cmd", "kind": "cmd",
+                                                 "material": str(b)}))
+        (b / "checked.md").write_text(checked)
+        (b / "verdict.md").write_text("".join(
+            f"## F{i} t\ndecision: {d}\nreason: {r}\n\n" for i, (d, r) in enumerate(decisions, 1)))
+        cmd = [sys.executable, "-I", str(CLI), "gate", str(b)] + (["--ledger", str(Path(td) / ledger)]
+                                                                  if ledger else [])
+        return subprocess.run(cmd, capture_output=True, text=True), b
+
+    r, _ = gate([("TODO", ""), ("accept", "")])
+    ok(r.returncode == 3 and "ADJUDICATION-GATE: F1 未裁決" in r.stderr, "gate: undecided -> exit 3")
+    r, _ = gate([("accept", ""), ("", "")])
+    ok(r.returncode == 3 and "F2 未裁決" in r.stderr, "gate: blank decision -> exit 3")
+    r, _ = gate([("accept", ""), ("reject", "")])
+    ok(r.returncode == 3 and "F2 缺理由" in r.stderr, "gate: reject without reason -> exit 3")
+    r, _ = gate([("reject", "not real"), ("defer", "next sprint")])
+    ok(r.returncode == 0, "gate: all reject/defer with reasons -> exit 0")
+    ok(r.stdout.strip() == "findings=2 high=1 accept=0 reject=1 defer=1", "gate: counts printed")
+    r, _ = gate([("accept", ""), ("reject", "no")])
+    ok(r.returncode == 10, "gate: any accept -> exit 10")
+    (Path(td) / "nobundle").mkdir()
+    r = subprocess.run([sys.executable, "-I", str(CLI), "gate", str(Path(td) / "nobundle")],
+                       capture_output=True, text=True)
+    ok(r.returncode == 3 and "verdict.md not found" in r.stderr, "gate: no verdict.md -> exit 3")
+
+    # spinning means three non-decreasing >0 rounds in a row; 2,1 breaks it
+    r, _ = gate([("accept", "")] * 2 + [("reject", "no")], ledger="l2.tsv")
+    r, _ = gate([("accept", "")] * 2 + [("reject", "no")], ledger="l2.tsv")
+    r, _ = gate([("accept", "")] * 3, ledger="l2.tsv")
+    ok(r.returncode == 4 and "NOT-CONVERGING: accept 2,2,3" in r.stderr, "ledger 2,2,3 -> exit 4")
+    r, _ = gate([("accept", "")] * 2 + [("reject", "no")], ledger="l1.tsv")
+    ok(r.returncode == 10, "ledger round 1 (2 accept) -> exit 10")
+    r, _ = gate([("accept", "")] + [("reject", "no")], ledger="l1.tsv")
+    ok(r.returncode == 10, "ledger 2,1 -> exit 10, not 4 (progress)")
+    r, _ = gate([("accept", "")] * 2 + [("reject", "no")], ledger="l1.tsv")
+    ok(r.returncode == 10, "ledger 2,1,2 -> exit 10, not 4 (progress)")
+    r, _ = gate([("accept", "")] * 2 + [("reject", "no")], ledger="l1.tsv")
+    ok(r.returncode == 4 and "NOT-CONVERGING: accept 1,2,2" in r.stderr,
+       "ledger 2,1,2,2 -> last 3 (1,2,2) spin -> exit 4")
+    rows = (Path(td) / "l1.tsv").read_text().splitlines()
+    ok(rows[0] == "round\ttime\tbundle\thigh\taccept" and len(rows) == 5,
+       "ledger header written once, one row per round")
+    ok(rows[-1].split("\t")[0] == "4" and len(rows[-1].split("\t")) == 5, "ledger row shape")
+    ok((Path(td) / "l2.tsv").read_text().splitlines()[0] == "round\ttime\tbundle\thigh\taccept",
+       "ledger gets its header on first write only")
+
+
+# --- codex preset asks for a read-only sandbox -----------------------------
+ok("codex" in ad.PRESETS and "-s read-only" in ad.PRESETS["codex"]["cmd"]
+   and "{material}" in ad.PRESETS["codex"]["cmd"], "codex preset: read-only sandbox inside material")
+
 print()
 if fails:
     print(f"{len(fails)} check(s) failed:")

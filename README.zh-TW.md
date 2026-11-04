@@ -34,7 +34,7 @@ ln -s "$PWD/commands/audit.en.md" ~/.claude/commands/audit.md
 4. 都沒設、且你在終端機前，它會詢問你，並問要不要存成預設
 5. 其他情況（CI、代理程式、管線）以 exit 2 停下，並告訴你怎麼設定
 
-內建 preset：`deepseek`（opencode＋DeepSeek V4 Pro）、`builder`（OpenBot Builder）、`cmd`（任何你指定的 CLI）。
+內建 preset：`deepseek`（opencode＋DeepSeek V4 Pro）、`codex`（OpenAI Codex CLI，唯讀沙箱）、`builder`（OpenBot Builder）、`cmd`（任何你指定的 CLI）。
 
 ```bash
 audit-devil config                        # 顯示目前設定與每項的來源
@@ -146,6 +146,21 @@ intent; when in doubt, ask-user. no-op = informational.
 - `accept` — 你已查核為真，並會在這一輪修正。
 - `reject` — 你已查核為假，或該位置不存在；用一句話說明原因。
 - `defer` — 確實存在但超出範圍；記錄它被保存在何處（issue / fixindex / state）。
+
+## 迴圈（/codex-loop）
+
+`/codex-loop <計畫或目標檔>` 把整條流程包成有上限的迴圈：主 session 規劃與裁決，`deep-run` 在 worktree 執行，audit-devil 以 `--preset codex` 驗收與驗屍。逐條填完 `verdict.md` 後，`audit-devil gate <bundle> --ledger <repo>/.audit-devil/loop.tsv` 機械判定要不要再打一輪。
+
+```bash
+ln -s "$PWD/commands/codex-loop.md" ~/.claude/commands/codex-loop.md
+```
+
+| gate exit | 意義 |
+| --- | --- |
+| 0 | 收斂——沒有 accept，可收尾 |
+| 3 | 有條目未裁決，或 reject／defer 沒寫理由——先裁決 |
+| 4 | 連續 3 輪 accept 不降——不收斂，換方法 |
+| 10 | 還有 accept——修完再打一輪 |
 
 ## 環境變數
 

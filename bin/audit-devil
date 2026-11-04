@@ -22,7 +22,9 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 HOME = Path.home()
 SKILL = Path(os.environ.get("OPENBOT_SKILL_DIR", HOME / ".claude/skills/send-to-openbot"))
@@ -39,6 +41,8 @@ PRESETS = {
     # gets sandbox-rejected outside its cwd, then ends with no answer (tested 2026-10-31)
     "deepseek": {"kind": "cmd", "out": None, "about": "opencode + DeepSeek V4 Pro (opencode-go)",
                  "cmd": "opencode run -m opencode-go/deepseek-v4-pro --agent plan --dir {material}"},
+    "codex": {"kind": "cmd", "out": None, "about": "OpenAI Codex CLI, read-only sandbox",
+              "cmd": "codex exec --skip-git-repo-check -s read-only -C {material} -"},
     "builder": {"kind": "openbot", "agent": BUILDER, "out": HOME / "OpenBot/Shared/audit-devil",
                 "about": "OpenBot Builder agent (needs the send-to-openbot skill)"},
     "cmd": {"kind": "cmd", "cmd": None, "out": None,
@@ -455,6 +459,72 @@ def cmd_check(a):
         sys.exit(1)
 
 
+DECISIONS = ("accept", "reject", "defer")
+LEDGER_HEADER = "round\ttime\tbundle\thigh\taccept\n"
+
+
+def parse_verdict(text):
+    """verdict.md written by `check`: `## <id> <title>` then `decision:` / `reason:` lines."""
+    rows, cur = [], None
+    for line in text.splitlines():
+        m = re.match(r"^##\s+(\S+)", line)
+        if m:
+            cur = {"id": m.group(1), "decision": None, "reason": ""}
+            rows.append(cur)
+        elif cur:
+            m = re.match(r"^(decision|reason)\s*:\s*(.*)$", line.strip(), re.I)
+            if m:
+                cur[m.group(1).lower()] = m.group(2).strip()
+    return rows
+
+
+def cmd_gate(a):
+    b = Path(a.bundle)
+    vf = b / "verdict.md"
+    if not vf.is_file():
+        die(f"{b}/verdict.md not found — run `check` and rule on every finding", 3)
+    rows = parse_verdict(vf.read_text())
+    errs = []
+    for r in rows:
+        if r["decision"] not in DECISIONS:
+            errs.append(f"ADJUDICATION-GATE: {r['id']} 未裁決")
+        elif r["decision"] in ("reject", "defer") and not r["reason"]:
+            errs.append(f"ADJUDICATION-GATE: {r['id']} 缺理由")
+    if errs:
+        print("\n".join(errs), file=sys.stderr)
+        sys.exit(3)
+
+    # severity lives in checked.md (one per finding); fall back to report.md when check was never run
+    src = b / "checked.md"
+    src = src if src.is_file() else b / "report.md"
+    high = 0
+    if src.is_file():
+        high = sum(1 for line in src.read_text().splitlines()
+                   if re.match(r"^severity\s*:\s*high\b", line.strip(), re.I))
+    count = {d: sum(r["decision"] == d for r in rows) for d in DECISIONS}
+    print(f"findings={len(rows)} high={high} accept={count['accept']} "
+          f"reject={count['reject']} defer={count['defer']}")
+
+    recent = []
+    if a.ledger:
+        led = Path(a.ledger)
+        lines = led.read_text().splitlines() if led.is_file() else []
+        data = [ln for ln in lines[1:] if ln.strip()] if lines else []
+        now = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M:%S")
+        led.parent.mkdir(parents=True, exist_ok=True)
+        new = not led.is_file()
+        with led.open("a") as fh:
+            if new:
+                fh.write(LEDGER_HEADER)
+            fh.write(f"{len(data) + 1}\t{now}\t{b.name}\t{high}\t{count['accept']}\n")
+        # non-decreasing >0 accept over the last 3 rounds means the loop is spinning
+        recent = [int(d.split("\t")[4]) for d in data[-2:] if len(d.split("\t")) > 4] + [count["accept"]]
+        if len(recent) == 3 and all(x > 0 for x in recent) and recent[0] <= recent[1] <= recent[2]:
+            print(f"NOT-CONVERGING: accept {','.join(map(str, recent))}", file=sys.stderr)
+            sys.exit(4)
+    sys.exit(0 if count["accept"] == 0 else 10)
+
+
 def cmd_config(a):
     updates = {"preset": a.preset, "cmd": a.cmd, "out": a.out, "lang": a.lang}
     if a.preset and a.preset not in PRESETS:
@@ -504,6 +574,11 @@ def main():
     pk.add_argument("bundle")
     pk.add_argument("--material", help="override the material root")
     pk.set_defaults(fn=cmd_check)
+
+    pg = sub.add_parser("gate", help="refuse to proceed until every finding is ruled on; exit 0 done, 10 fix again, 3 undecided, 4 not converging")
+    pg.add_argument("bundle")
+    pg.add_argument("--ledger", help="TSV to append one row per round (enables convergence check)")
+    pg.set_defaults(fn=cmd_gate)
 
     pf = sub.add_parser("config", help="show or set defaults (no flags = show)")
     pf.add_argument("--preset", help=f"default second model: {', '.join(PRESETS)}")
