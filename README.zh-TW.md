@@ -147,13 +147,9 @@ intent; when in doubt, ask-user. no-op = informational.
 - `reject` — 你已查核為假，或該位置不存在；用一句話說明原因。
 - `defer` — 確實存在但超出範圍；記錄它被保存在何處（issue / fixindex / state）。
 
-## 迴圈（/codex-loop）
+## 迴圈（/dsloop）
 
-`/codex-loop <計畫或目標檔>` 把整條流程包成有上限的迴圈：主 session 規劃與裁決，`deep-run` 在 worktree 執行，audit-devil 以 `--preset codex` 驗收與驗屍。逐條填完 `verdict.md` 後，`audit-devil gate <bundle> --ledger <repo>/.audit-devil/loop.tsv` 機械判定要不要再打一輪。
-
-```bash
-ln -s "$PWD/commands/codex-loop.md" ~/.claude/commands/codex-loop.md
-```
+以 audit-devil 為審計核心的「規劃 → 執行 → 審計」迴圈已拆成獨立 repo：[royalskynet/dsloop](https://github.com/royalskynet/dsloop)。它用 `audit-devil gate <bundle> --ledger <repo>/.audit-devil/loop.tsv` 判定要不要再跑一輪。
 
 | gate exit | 意義 |
 | --- | --- |

@@ -147,13 +147,9 @@ Fill `verdict.md`. Each `decision:` is one of:
 - `reject` — you verified it is false or the location does not exist; say why in one sentence.
 - `defer` — real but out of scope; record where it is being kept (issue / fixindex / state).
 
-## Loop (/codex-loop)
+## Loop (/dsloop)
 
-`/codex-loop <plan or goal file>` turns the pipeline into a bounded loop: the main session plans and rules, `deep-run` executes in a worktree, and audit-devil with `--preset codex` audits and post-mortems. After ruling on every finding in `verdict.md`, `audit-devil gate <bundle> --ledger <repo>/.audit-devil/loop.tsv` decides whether the loop continues.
-
-```bash
-ln -s "$PWD/commands/codex-loop.en.md" ~/.claude/commands/codex-loop.md
-```
+The plan → execute → audit loop built on audit-devil now lives in its own repo: [royalskynet/dsloop](https://github.com/royalskynet/dsloop). It uses `audit-devil gate <bundle> --ledger <repo>/.audit-devil/loop.tsv` to decide whether another round is needed.
 
 | gate exit | meaning |
 | --- | --- |
