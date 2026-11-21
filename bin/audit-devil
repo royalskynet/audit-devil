@@ -228,8 +228,13 @@ def cmd_bundle(a):
         parts.append("material/diff.patch — the change under audit (unified diff, 8 lines of context)")
         # Line numbers in a patch are not line numbers in a file, so the changed
         # files go in whole: that is what makes `evidence:` checkable later.
-        names = run(["git", "-C", str(root), "diff", "--name-only", a.diff]).stdout.split()
-        for n in names:
+        names = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-only", "-z", a.diff], capture_output=True
+        )
+        if names.returncode:
+            die(f"git diff --name-only {a.diff} failed: {os.fsdecode(names.stderr).strip()}")
+        for name in names.stdout.split(b"\0")[:-1]:
+            n = os.fsdecode(name)
             src = root / n
             if not src.is_file() or src.stat().st_size > 512_000:
                 continue

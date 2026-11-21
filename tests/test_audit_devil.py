@@ -5,6 +5,7 @@ Run: python3 -I tests/test_audit_devil.py   (no deps, no network, no model call)
 These exist because `check` is the only thing standing between a fabricated
 finding and a believed finding. If it stops catching bad citations, this fails.
 """
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -152,6 +153,18 @@ with tempfile.TemporaryDirectory() as td:
                         "--out", str(Path(td) / "out"), "--diff", "HEAD~1..HEAD", "--file", "a.py"],
                        capture_output=True, text=True)
     ok(r.returncode == 0, "--diff + --file of the same file -> no collision")
+
+    spaced = repo / "two words.py"
+    spaced.write_text("before = 1\n")
+    g("add", spaced.name)
+    g("commit", "-qm", "add spaced path")
+    spaced.write_text("after = 2\n")
+    r = subprocess.run([sys.executable, "-I", str(CLI), "bundle", "--preset", "cmd", "--root", str(repo),
+                        "--out", str(Path(td) / "out"), "--id", "spaced-path", "--diff", "HEAD"],
+                       capture_output=True, text=True)
+    ok(r.returncode == 0, "--diff handles a filename with spaces")
+    copied = Path(r.stdout.strip()) / "material" / "files" / spaced.name
+    ok(copied.is_file() and copied.read_text() == spaced.read_text(), "--diff copies the full spaced filename")
 
 # --- cmd send refuses an empty material set --------------------------------
 with tempfile.TemporaryDirectory() as td:
