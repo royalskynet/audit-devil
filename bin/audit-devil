@@ -107,7 +107,7 @@ intent; when in doubt, ask-user. no-op = informational.
 
 FINDING_RE = re.compile(r"^###\s+(F\d+)\s*(.*)$")
 FIELD_RE = re.compile(r"^(severity|kind|action|evidence|claim|why-not-caught|fix)\s*:\s*(.*)$", re.I)
-LOC_RE = re.compile(r"^(?P<path>[^\s:]+):(?P<a>\d+)(?:\s*-\s*(?P<b>\d+))?$")
+LOC_RE = re.compile(r"^(?P<path>(?:[^\s:]| )+):(?P<a>\d+)(?:\s*-\s*(?P<b>\d+))?$")
 
 
 def die(msg, code=2):

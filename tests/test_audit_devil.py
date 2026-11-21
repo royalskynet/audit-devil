@@ -165,6 +165,13 @@ with tempfile.TemporaryDirectory() as td:
     ok(r.returncode == 0, "--diff handles a filename with spaces")
     copied = Path(r.stdout.strip()) / "material" / "files" / spaced.name
     ok(copied.is_file() and copied.read_text() == spaced.read_text(), "--diff copies the full spaced filename")
+    bundle = copied.parents[2]
+    (bundle / "report.md").write_text(REPORT.replace("files/app.py:3, files/app.py:5-6", "files/two words.py:1 - 1")
+                                      .replace("files/app.py:99", "files/two words.py:1"))
+    r = subprocess.run([sys.executable, "-I", str(CLI), "check", str(bundle)], capture_output=True, text=True)
+    checked = (bundle / "checked.md").read_text()
+    ok(r.returncode == 0 and checked.count("evidence files/two words.py:1-1: OK") == 2 and "after = 2" in checked,
+       "check verifies and quotes citations to spaced filenames")
 
 # --- cmd send refuses an empty material set --------------------------------
 with tempfile.TemporaryDirectory() as td:
